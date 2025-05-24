@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Excel Search</title>
+    <style>
+      body {
+        font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+        max-width: 1200px;
+        margin: 0 auto;
+        padding: 20px;
+        background-color: #f5f5f5;
+      }
+
+      h1 {
+        color: #2c3e50;
+        text-align: center;
+        margin-bottom: 30px;
+      }
+
+      .search-container {
+        background: white;
+        padding: 20px;
+        border-radius: 8px;
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        margin-bottom: 20px;
+      }
+
+      .input-group {
+        margin-bottom: 15px;
+      }
+
+      label {
+        display: block;
+        margin-bottom: 5px;
+        color: #34495e;
+        font-weight: 500;
+      }
+
+      input[type="text"] {
+        width: 100%;
+        padding: 8px 12px;
+        border: 1px solid #ddd;
+        border-radius: 4px;
+        font-size: 14px;
+        transition: border-color 0.3s;
+      }
+
+      input[type="text"]:focus {
+        border-color: #3498db;
+        outline: none;
+        box-shadow: 0 0 0 2px rgba(52, 152, 219, 0.2);
+      }
+
+      button {
+        background-color: #3498db;
+        color: white;
+        border: none;
+        padding: 10px 20px;
+        border-radius: 4px;
+        cursor: pointer;
+        font-size: 14px;
+        transition: background-color 0.3s;
+      }
+
+      button:hover {
+        background-color: #2980b9;
+      }
+
+      button:disabled {
+        background-color: #bdc3c7;
+        cursor: not-allowed;
+      }
+
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        background: white;
+        border-radius: 8px;
+        overflow: hidden;
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+      }
+
+      th {
+        background-color: #34495e;
+        color: white;
+        padding: 12px;
+        text-align: left;
+      }
+
+      td {
+        padding: 12px;
+        border-bottom: 1px solid #ddd;
+      }
+
+      tr:hover {
+        background-color: #f8f9fa;
+      }
+
+      .loading {
+        display: none;
+        text-align: center;
+        margin: 20px 0;
+      }
+
+      .loading-spinner {
+        display: inline-block;
+        width: 40px;
+        height: 40px;
+        border: 4px solid #f3f3f3;
+        border-top: 4px solid #3498db;
+        border-radius: 50%;
+        animation: spin 1s linear infinite;
+      }
+
+      @keyframes spin {
+        0% {
+          transform: rotate(0deg);
+        }
+        100% {
+          transform: rotate(360deg);
+        }
+      }
+
+      .no-results {
+        text-align: center;
+        padding: 20px;
+        color: #7f8c8d;
+        font-style: italic;
+      }
+
+      .results-container {
+        margin-top: 20px;
+      }
+
+      h2 {
+        color: #2c3e50;
+        margin-bottom: 15px;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Excel Search</h1>
+    <div class="search-container">
+      <div class="input-group">
+        <label>Directories (comma separated):</label>
+        <input
+          type="text"
+          id="dirs"
+          size="60"
+          placeholder="e.g. /Users/yourname/Documents/ExcelFiles"
+          value="/Users/dotrungduchd/Downloads"
+        />
+      </div>
+      <div class="input-group">
+        <label>File Extensions (comma separated):</label>
+        <input
+          type="text"
+          id="extensions"
+          size="30"
+          placeholder="e.g. xlsx, xls, csv"
+          value="xlsx, xls, csv"
+        />
+      </div>
+      <div class="input-group">
+        <label>Search Text:</label>
+        <input type="text" id="query" />
+      </div>
+      <button onclick="doSearch()" id="searchButton">Search</button>
+    </div>
+
+    <div class="loading" id="loading">
+      <div class="loading-spinner"></div>
+      <p>Searching...</p>
+    </div>
+
+    <div class="results-container">
+      <h2>Results</h2>
+      <table id="results">
+        <thead>
+          <tr>
+            <th>File</th>
+            <th>Sheet</th>
+            <th>Row</th>
+            <th>Content</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+
+    <script>
+      async function doSearch() {
+        const searchButton = document.getElementById("searchButton");
+        const loading = document.getElementById("loading");
+        const tbody = document.getElementById("results").querySelector("tbody");
+
+        // Show loading and disable button
+        loading.style.display = "block";
+        searchButton.disabled = true;
+        tbody.innerHTML = "";
+
+        try {
+          const dirs = document
+            .getElementById("dirs")
+            .value.split(",")
+            .map((s) => s.trim())
+            .filter(Boolean);
+          const extensions = document
+            .getElementById("extensions")
+            .value.split(",")
+            .map((s) => s.trim().toLowerCase())
+            .filter(Boolean);
+          const query = document.getElementById("query").value;
+
+          const res = await fetch("/search", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ directories: dirs, query, extensions }),
+          });
+          const data = await res.json();
+          console.log(data);
+
+          if (data.matches && data.matches.length > 0) {
+            data.matches.forEach((m) => {
+              const tr = document.createElement("tr");
+              tr.innerHTML = `<td>${m.file}</td><td>${m.sheet}</td><td>${m.row}</td><td>${m.content}</td>`;
+              tbody.appendChild(tr);
+            });
+          } else {
+            tbody.innerHTML =
+              "<tr><td colspan='4' class='no-results'>No results found</td></tr>";
+          }
+        } catch (error) {
+          tbody.innerHTML =
+            "<tr><td colspan='4' class='no-results'>Error occurred while searching</td></tr>";
+          console.error("Search error:", error);
+        } finally {
+          // Hide loading and enable button
+          loading.style.display = "none";
+          searchButton.disabled = false;
+        }
+      }
+    </script>
+  </body>
+</html>
