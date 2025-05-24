@@ -1,27 +1,29 @@
-# Finder
+# Excel File Finder
 
-A fast and efficient tool for searching through Excel (.xlsx, .xls) and CSV files. Built with Go for high performance and a simple web interface.
+A service application for searching and importing Excel/CSV files. The application provides a web interface to search through Excel and CSV files in specified directories.
 
 ## Features
 
-- Search through multiple Excel and CSV files simultaneously
-- Support for multiple file extensions (.xlsx, .xls, .csv)
-- Concurrent processing for faster search results
-- Simple and intuitive web interface
-- Real-time search results display
-- Case-insensitive search
-- Detailed match information including file, sheet, and row numbers
+- Search through Excel (.xlsx, .xls) and CSV files
+- Web-based user interface
+- Windows service support for automatic startup
+- Full-text search capabilities
+- Support for multiple directories
+- Real-time search results
 
 ## Prerequisites
 
-- Go 1.20 or higher
-- Modern web browser
+- Go 1.16 or higher
+- SQLite3
+- Windows OS (for service installation)
 
 ## Installation
 
+### Building from Source
+
 1. Clone the repository:
 ```bash
-git clone https://github.com/dotrungduchd/finder.git
+git clone <repository-url>
 cd finder
 ```
 
@@ -30,50 +32,112 @@ cd finder
 go mod download
 ```
 
+3. Build the application:
+```bash
+# For Windows
+GOOS=windows GOARCH=amd64 go build -o dist/finder.exe
+
+# For macOS/Linux
+go build -o finder
+```
+
+### Windows Service Installation
+
+1. Create a directory for the application (e.g., `C:\Finder`)
+2. Copy the following files to the directory:
+   - `finder.exe`
+   - `static` folder (containing index.html)
+   - `finder.db` (if it exists)
+
+3. Open Command Prompt as Administrator and navigate to the application directory:
+```cmd
+cd C:\Finder
+```
+
+4. Install the service:
+```cmd
+finder.exe install
+```
+
+5. Start the service:
+```cmd
+finder.exe start
+```
+
+## Service Management
+
+The following commands are available for managing the Windows service:
+
+- `finder.exe start` - Start the service
+- `finder.exe stop` - Stop the service
+- `finder.exe status` - Check service status
+- `finder.exe uninstall` - Remove the service
+
 ## Usage
 
-1. Start the server:
+1. Access the web interface at http://localhost:8080/static/
+2. Use the interface to:
+   - Import Excel/CSV files from specified directories
+   - Search through imported files
+   - View search results with file, sheet, and row information
+
+## API Endpoints
+
+### Search
+- **URL**: `/search`
+- **Method**: `POST`
+- **Request Body**:
+```json
+{
+    "directories": ["path/to/directory"],
+    "query": "search term",
+    "extensions": ["xlsx", "xls", "csv"]
+}
+```
+
+### Import
+- **URL**: `/import`
+- **Method**: `POST`
+- **Request Body**:
+```json
+{
+    "directories": ["path/to/directory"],
+    "extensions": ["xlsx", "xls", "csv"]
+}
+```
+
+## Troubleshooting
+
+1. If the service fails to start:
+   - Check Windows Event Viewer for error messages
+   - Verify the application directory has proper permissions
+   - Ensure port 8080 is not in use by another application
+
+2. If the web interface is not accessible:
+   - Verify the service is running
+   - Check if port 8080 is accessible
+   - Clear browser cache and try again
+
+## Development
+
+### Project Structure
+```
+finder/
+├── main.go          # Main application code
+├── static/          # Static web files
+│   └── index.html   # Web interface
+└── finder.db        # SQLite database
+```
+
+### Building for Development
 ```bash
 go run main.go
 ```
 
-2. Open your web browser and navigate to:
-```
-http://localhost:8080/static/
-```
+## License
 
-3. In the web interface:
-   - Enter the directory path(s) to search in
-   - Specify file extensions to search (e.g., "xlsx, xls, csv")
-   - Enter your search query
-   - Click "Search" to start the search
-
-## Search Results
-
-Results are displayed in a table with the following information:
-- File: The path of the file containing the match
-- Sheet: The sheet name (for Excel files) or "Sheet1" (for CSV files)
-- Row: The row number where the match was found
-- Content: The matching row content, with cells separated by " - "
-
-## Performance
-
-- Uses concurrent processing for multiple files
-- Optimized search algorithm for quick results
-- Worker pool to manage system resources
-- Efficient memory usage
-
-## Technical Details
-
-- Built with Go and the excelize library
-- Uses goroutines for concurrent processing
-- Implements a worker pool pattern
-- Web interface built with vanilla JavaScript
+[dotrungduchd]
 
 ## Contributing
 
-Feel free to submit issues and enhancement requests!
-
-## License
-
-This project is licensed under the MIT License - see the LICENSE file for details. 
+[TDB] 
