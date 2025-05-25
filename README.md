@@ -34,11 +34,7 @@ go mod download
 
 3. Build the application:
 ```bash
-# For Windows
-GOOS=windows GOARCH=amd64 go build -o dist/finder.exe
-
-# For macOS/Linux
-go build -o finder
+./build.sh
 ```
 
 ### Windows Service Installation

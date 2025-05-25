@@ -405,7 +405,7 @@
         statusMessage.style.display = "block";
         setTimeout(() => {
           statusMessage.style.display = "none";
-        }, 5000);
+        }, 3000);
       }
 
       function showLoading() {
@@ -542,7 +542,30 @@
         }
       }
 
-      importBtn.addEventListener("click", showModal);
+      searchBtn.addEventListener("click", () => {
+        const query = searchInput.value.trim();
+        if (!query) {
+          showStatus("Please enter a search term to find files.", true);
+          return;
+        }
+        currentPage = 1;
+        resultsDiv.innerHTML = ""; // Clear results before new search
+        performSearch();
+      });
+
+      importBtn.addEventListener("click", () => {
+        if (selectedDirectories.size === 0) {
+          showStatus("Please select at least one directory to import.", true);
+          return;
+        }
+        const extensions = extensionsInput.value.trim();
+        if (!extensions) {
+          showStatus("Please specify at least one file extension.", true);
+          return;
+        }
+        resultsDiv.innerHTML = ""; // Clear results before import
+        showModal();
+      });
 
       function updatePagination() {
         const paginationControls = document.createElement("div");
@@ -602,7 +625,7 @@
         const query = document.getElementById("searchInput").value;
 
         if (!query) {
-          showError("Please enter a search query");
+          showStatus("Please enter a search query", true);
           return;
         }
 
@@ -647,36 +670,39 @@
             processTime: `${(endTime - startTime).toFixed(2)}ms`,
           });
 
-          if (!data || !Array.isArray(data.matches)) {
-            throw new Error("Invalid response format");
-          }
+          // Ensure matches is always an array
+          const matches = Array.isArray(data.matches) ? data.matches : [];
 
-          totalCount = data.totalCount;
-          totalPages = data.totalPages;
-          currentPage = data.currentPage;
-          displayResults(data.matches);
+          totalCount = data.totalCount || 0;
+          totalPages = data.totalPages || 1;
+          currentPage = data.currentPage || 1;
+          displayResults(matches);
           updatePagination();
+
+          if (matches.length === 0) {
+            showStatus("No results found for your search query.", true);
+          }
         } catch (error) {
           const endTime = performance.now();
           console.error("Search Error:", {
             error: error.message,
             processTime: `${(endTime - startTime).toFixed(2)}ms`,
           });
-          showError(error.message || "An error occurred during search");
+          showStatus("Error during search: " + error.message, true);
+          displayResults([]);
         } finally {
           hideLoading();
         }
       }
 
-      searchBtn.addEventListener("click", () => {
-        currentPage = 1;
-        performSearch();
-      });
-
       function displayResults(matches) {
         resultsDiv.innerHTML = "";
         if (!matches || matches.length === 0) {
-          resultsDiv.innerHTML = "<p>No matches found.</p>";
+          resultsDiv.innerHTML = `
+            <div class="no-results">
+              <h3>No Results Found</h3>
+              <p>Try adjusting your search criteria or check if the selected directories contain the files you're looking for.</p>
+            </div>`;
           return;
         }
 
