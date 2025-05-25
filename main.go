@@ -26,6 +26,13 @@ type SearchRequest struct {
 	Directories []string `json:"directories"`
 	Query       string   `json:"query"`
 	Extensions  []string `json:"extensions"`
+	Page        int      `json:"page"`
+	PageSize    int      `json:"pageSize"`
+}
+
+type ImportRequest struct {
+	Directories []string `json:"directories"`
+	Extensions  []string `json:"extensions"`
 }
 
 type Match struct {
@@ -36,7 +43,10 @@ type Match struct {
 }
 
 type SearchResponse struct {
-	Matches []Match `json:"matches"`
+	Matches     []Match `json:"matches"`
+	TotalCount  int     `json:"totalCount"`
+	TotalPages  int     `json:"totalPages"`
+	CurrentPage int     `json:"currentPage"`
 }
 
 type ImportResponse struct {
@@ -51,11 +61,13 @@ type program struct {
 }
 
 func (p *program) Start(s service.Service) error {
+	log.Printf("Service starting...")
 	go p.run()
 	return nil
 }
 
 func (p *program) Stop(s service.Service) error {
+	log.Printf("Service stopping...")
 	if p.server != nil {
 		return p.server.Close()
 	}
@@ -68,6 +80,8 @@ func (p *program) run() {
 	if err != nil {
 		log.Fatal(err)
 	}
+
+	log.Printf("Service started in directory: %s", workDir)
 
 	// Print debug information
 	fmt.Printf("Working directory: %s\n", workDir)
@@ -104,6 +118,7 @@ func (p *program) run() {
 		Addr: ":8080",
 	}
 
+	log.Printf("Server starting at http://localhost:8080/static/")
 	fmt.Println("Server running at http://localhost:8080/static/")
 	if err := p.server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		log.Fatal(err)
@@ -138,11 +153,78 @@ func init() {
 	}
 }
 
+func verifyTableState() error {
+	var count int
+	err := db.QueryRow("SELECT COUNT(*) FROM files_fts").Scan(&count)
+	if err != nil {
+		return fmt.Errorf("error checking table state: %v", err)
+	}
+	log.Printf("Current number of rows in files_fts: %d", count)
+	return nil
+}
+
+func checkDatabaseSize() error {
+	var size int64
+	err := db.QueryRow("SELECT page_count * page_size as size FROM pragma_page_count(), pragma_page_size()").Scan(&size)
+	if err != nil {
+		return fmt.Errorf("error checking database size: %v", err)
+	}
+	log.Printf("Current database size: %.2f MB", float64(size)/1024/1024)
+	return nil
+}
+
 func importToSQLite(dirs []string, extensions []string) error {
+	// Check initial database size
+	log.Printf("Checking initial database size")
+	if err := checkDatabaseSize(); err != nil {
+		log.Printf("Warning: Could not check initial database size: %v", err)
+	}
+
+	// Verify initial state
+	log.Printf("Verifying initial table state")
+	if err := verifyTableState(); err != nil {
+		log.Printf("Warning: Could not verify initial table state: %v", err)
+	}
+
 	// Clear existing data
-	_, err := db.Exec("DELETE FROM files_fts")
+	log.Printf("Clearing existing data from files_fts table")
+	result, err := db.Exec("DELETE FROM files_fts")
 	if err != nil {
 		return fmt.Errorf("error clearing existing data: %v", err)
+	}
+
+	// Get number of rows deleted
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		log.Printf("Warning: Could not get rows affected count: %v", err)
+	} else {
+		log.Printf("Deleted %d rows from files_fts table", rowsAffected)
+	}
+
+	// Verify deletion
+	log.Printf("Verifying table state after deletion")
+	if err := verifyTableState(); err != nil {
+		log.Printf("Warning: Could not verify table state after deletion: %v", err)
+	}
+
+	// Optimize FTS4 after deletion
+	log.Printf("Optimizing FTS4 table")
+	_, err = db.Exec("INSERT INTO files_fts(files_fts) VALUES('optimize')")
+	if err != nil {
+		log.Printf("Warning: Could not optimize FTS4 after deletion: %v", err)
+	}
+
+	// Vacuum the database to reclaim space
+	log.Printf("Vacuuming database to reclaim space")
+	_, err = db.Exec("VACUUM")
+	if err != nil {
+		log.Printf("Warning: Could not vacuum database: %v", err)
+	}
+
+	// Check final database size
+	log.Printf("Checking final database size")
+	if err := checkDatabaseSize(); err != nil {
+		log.Printf("Warning: Could not check final database size: %v", err)
 	}
 
 	// Begin transaction
@@ -278,19 +360,34 @@ func readExcelFile(path string) ([]map[string]interface{}, error) {
 	return documents, nil
 }
 
-func searchInSQLite(query string) ([]Match, error) {
+func searchInSQLite(query string, page, pageSize int) ([]Match, int, error) {
 	if query == "" {
-		return nil, fmt.Errorf("search query cannot be empty")
+		return nil, 0, fmt.Errorf("search query cannot be empty")
 	}
 
+	// Get total count
+	var totalCount int
+	err := db.QueryRow(`
+		SELECT COUNT(*)
+		FROM files_fts
+		WHERE files_fts MATCH ?
+	`, query).Scan(&totalCount)
+	if err != nil {
+		return nil, 0, fmt.Errorf("database error getting count: %v", err)
+	}
+
+	// Calculate offset
+	offset := (page - 1) * pageSize
+
+	// Get paginated results
 	rows, err := db.Query(`
 		SELECT file, sheet, row, content
 		FROM files_fts
 		WHERE files_fts MATCH ?
-		LIMIT 1000
-	`, query)
+		LIMIT ? OFFSET ?
+	`, query, pageSize, offset)
 	if err != nil {
-		return nil, fmt.Errorf("database error: %v", err)
+		return nil, 0, fmt.Errorf("database error: %v", err)
 	}
 	defer rows.Close()
 
@@ -299,16 +396,16 @@ func searchInSQLite(query string) ([]Match, error) {
 		var match Match
 		err := rows.Scan(&match.File, &match.Sheet, &match.Row, &match.Content)
 		if err != nil {
-			return nil, fmt.Errorf("error scanning results: %v", err)
+			return nil, 0, fmt.Errorf("error scanning results: %v", err)
 		}
 		matches = append(matches, match)
 	}
 
 	if err = rows.Err(); err != nil {
-		return nil, fmt.Errorf("error iterating results: %v", err)
+		return nil, 0, fmt.Errorf("error iterating results: %v", err)
 	}
 
-	return matches, nil
+	return matches, totalCount, nil
 }
 
 func importHandler(w http.ResponseWriter, r *http.Request) {
@@ -321,7 +418,7 @@ func importHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var req SearchRequest
+	var req ImportRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		log.Printf("Invalid request body: %v", err)
 		http.Error(w, "invalid request", 400)
@@ -376,10 +473,18 @@ func searchHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	log.Printf("Search request: query=%q, directories=%v, extensions=%v",
-		req.Query, req.Directories, req.Extensions)
+	// Set default values for pagination
+	if req.Page < 1 {
+		req.Page = 1
+	}
+	if req.PageSize < 1 {
+		req.PageSize = 10
+	}
 
-	matches, err := searchInSQLite(req.Query)
+	log.Printf("Search request: query=%q, directories=%v, extensions=%v, page=%d, pageSize=%d",
+		req.Query, req.Directories, req.Extensions, req.Page, req.PageSize)
+
+	matches, totalCount, err := searchInSQLite(req.Query, req.Page, req.PageSize)
 	if err != nil {
 		log.Printf("Search error: %v", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -387,9 +492,15 @@ func searchHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	duration := time.Since(startTime)
-	log.Printf("Search completed in %v, found %d matches", duration, len(matches))
+	log.Printf("Search completed in %v, found %d matches", duration, totalCount)
 
-	resp := SearchResponse{Matches: matches}
+	totalPages := (totalCount + req.PageSize - 1) / req.PageSize
+	resp := SearchResponse{
+		Matches:     matches,
+		TotalCount:  totalCount,
+		TotalPages:  totalPages,
+		CurrentPage: req.Page,
+	}
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(resp); err != nil {
 		log.Printf("Error encoding response: %v", err)
@@ -399,10 +510,21 @@ func searchHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func main() {
+	// Set up logging to file
+	logFile, err := os.OpenFile("finder.log", os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
+	if err != nil {
+		log.Fatal("Failed to open log file:", err)
+	}
+	defer logFile.Close()
+	log.SetOutput(logFile)
+	log.SetFlags(log.Ldate | log.Ltime | log.Lshortfile)
+
+	log.Printf("Application starting...")
+
 	svcConfig := &service.Config{
-		Name:        "ExcelFileFinder",
-		DisplayName: "Excel File Finder Service",
-		Description: "A service for searching and importing Excel files.",
+		Name:        "Finder",
+		DisplayName: "Finder Service",
+		Description: "A service for importing and searching files.",
 	}
 
 	prg := &program{}
@@ -412,6 +534,7 @@ func main() {
 	}
 
 	if len(os.Args) > 1 {
+		log.Printf("Service command received: %s", os.Args[1])
 		err = service.Control(s, os.Args[1])
 		if err != nil {
 			fmt.Printf("Valid actions: %q\n", service.ControlAction)
@@ -420,6 +543,7 @@ func main() {
 		return
 	}
 
+	log.Printf("Service starting...")
 	err = s.Run()
 	if err != nil {
 		log.Fatal(err)

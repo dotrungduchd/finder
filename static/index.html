@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Excel File Finder</title>
+    <title>Finder</title>
     <style>
       body {
         font-family: Arial, sans-serif;
@@ -261,6 +261,42 @@
         color: #a94442;
         border: 1px solid #ebccd1;
       }
+
+      .pagination {
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        margin-top: 20px;
+        gap: 10px;
+      }
+
+      .pagination button {
+        padding: 5px 10px;
+        background-color: #34495e;
+      }
+
+      .pagination button:disabled {
+        background-color: #95a5a6;
+      }
+
+      .pagination-info {
+        color: #7f8c8d;
+        font-size: 0.9em;
+      }
+
+      .page-size-selector {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        margin-left: 20px;
+      }
+
+      .page-size-selector select {
+        padding: 5px;
+        border: 1px solid #ddd;
+        border-radius: 4px;
+        background-color: white;
+      }
     </style>
   </head>
   <body>
@@ -324,6 +360,17 @@
       <div id="statusMessage" class="status-message"></div>
       <div id="loading" class="loading"></div>
       <div id="results"></div>
+      <div id="pagination" class="pagination">
+        <div class="page-size-selector">
+          <label for="pageSize">Items per page:</label>
+          <select id="pageSize" onchange="changePageSize()">
+            <option value="10">10</option>
+            <option value="20">20</option>
+            <option value="50">50</option>
+            <option value="100">100</option>
+          </select>
+        </div>
+      </div>
     </div>
 
     <script>
@@ -336,6 +383,8 @@
       const resultsDiv = document.getElementById("results");
       const loadingDiv = document.getElementById("loading");
       const statusMessage = document.getElementById("statusMessage");
+      const paginationDiv = document.getElementById("pagination");
+      const pageSizeSelect = document.getElementById("pageSize");
 
       let selectedDirectories = new Set(
         directoryInput.value
@@ -343,6 +392,10 @@
           .map((dir) => dir.trim())
           .filter(Boolean)
       );
+      let currentPage = 1;
+      let totalPages = 1;
+      let totalCount = 0;
+      let currentPageSize = 10;
       updateDirectoryList();
 
       function showStatus(message, isError = false) {
@@ -491,7 +544,53 @@
 
       importBtn.addEventListener("click", showModal);
 
-      searchBtn.addEventListener("click", async () => {
+      function updatePagination() {
+        const paginationControls = document.createElement("div");
+        paginationControls.className = "pagination-controls";
+        paginationControls.innerHTML = `
+          <button onclick="changePage(1)" ${
+            currentPage === 1 ? "disabled" : ""
+          }>First</button>
+          <button onclick="changePage(${currentPage - 1})" ${
+          currentPage === 1 ? "disabled" : ""
+        }>Previous</button>
+          <span class="pagination-info">Page ${currentPage} of ${totalPages} (${totalCount} results)</span>
+          <button onclick="changePage(${currentPage + 1})" ${
+          currentPage === totalPages ? "disabled" : ""
+        }>Next</button>
+          <button onclick="changePage(${totalPages})" ${
+          currentPage === totalPages ? "disabled" : ""
+        }>Last</button>
+        `;
+
+        // Clear existing pagination controls
+        const existingControls = paginationDiv.querySelector(
+          ".pagination-controls"
+        );
+        if (existingControls) {
+          existingControls.remove();
+        }
+
+        // Insert new controls before the page size selector
+        paginationDiv.insertBefore(
+          paginationControls,
+          paginationDiv.firstChild
+        );
+      }
+
+      function changePageSize() {
+        currentPageSize = parseInt(pageSizeSelect.value);
+        currentPage = 1; // Reset to first page when changing page size
+        performSearch();
+      }
+
+      function changePage(page) {
+        if (page < 1 || page > totalPages) return;
+        currentPage = page;
+        performSearch();
+      }
+
+      async function performSearch() {
         const directories = document
           .getElementById("directoryInput")
           .value.split(",")
@@ -514,6 +613,8 @@
             directories,
             extensions,
             query,
+            page: currentPage,
+            pageSize: currentPageSize,
           });
 
           const response = await fetch("/search", {
@@ -525,6 +626,8 @@
               directories,
               extensions,
               query,
+              page: currentPage,
+              pageSize: currentPageSize,
             }),
           });
 
@@ -538,6 +641,9 @@
           console.log("Search Response:", {
             status: response.status,
             matchCount: data.matches?.length || 0,
+            totalCount: data.totalCount,
+            totalPages: data.totalPages,
+            currentPage: data.currentPage,
             processTime: `${(endTime - startTime).toFixed(2)}ms`,
           });
 
@@ -545,7 +651,11 @@
             throw new Error("Invalid response format");
           }
 
+          totalCount = data.totalCount;
+          totalPages = data.totalPages;
+          currentPage = data.currentPage;
           displayResults(data.matches);
+          updatePagination();
         } catch (error) {
           const endTime = performance.now();
           console.error("Search Error:", {
@@ -556,6 +666,11 @@
         } finally {
           hideLoading();
         }
+      }
+
+      searchBtn.addEventListener("click", () => {
+        currentPage = 1;
+        performSearch();
       });
 
       function displayResults(matches) {
