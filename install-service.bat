@@ -11,27 +11,27 @@ goto usage
 
 :install
 echo Installing Excel File Finder Service...
-read-excel.exe install
+finder.exe install
 goto end
 
 :uninstall
 echo Uninstalling Excel File Finder Service...
-read-excel.exe uninstall
+finder.exe uninstall
 goto end
 
 :start
 echo Starting Excel File Finder Service...
-read-excel.exe start
+finder.exe start
 goto end
 
 :stop
 echo Stopping Excel File Finder Service...
-read-excel.exe stop
+finder.exe stop
 goto end
 
 :status
 echo Checking Excel File Finder Service status...
-read-excel.exe status
+finder.exe status
 goto end
 
 :usage

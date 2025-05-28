@@ -1,2 +1,2 @@
-finder.db
+*.db*
 *.log

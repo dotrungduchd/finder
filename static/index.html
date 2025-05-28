@@ -137,6 +137,22 @@
         width: 90%;
       }
 
+      .modal-options {
+        margin: 20px 0;
+        padding: 15px;
+        background-color: #f8f9fa;
+        border-radius: 4px;
+      }
+
+      .modal-options .checkbox-group {
+        margin: 0;
+      }
+
+      .modal-options label {
+        font-weight: normal;
+        color: #333;
+      }
+
       .modal-buttons {
         display: flex;
         justify-content: flex-end;
@@ -243,6 +259,71 @@
         background-color: #da190b;
       }
 
+      .file-input-container {
+        position: relative;
+        margin-bottom: 15px;
+      }
+
+      .file-input-label {
+        display: inline-block;
+        padding: 10px 15px;
+        background-color: #2196f3;
+        color: white;
+        border-radius: 4px;
+        cursor: pointer;
+        transition: background-color 0.3s;
+      }
+
+      .file-input-label:hover {
+        background-color: #1976d2;
+      }
+
+      .file-input {
+        display: none;
+      }
+
+      .selected-files {
+        margin-top: 10px;
+        max-height: 200px;
+        overflow-y: auto;
+        border: 1px solid #ddd;
+        border-radius: 4px;
+        padding: 10px;
+      }
+
+      .selected-file {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 5px;
+        border-bottom: 1px solid #eee;
+        word-break: break-all;
+      }
+
+      .selected-file:last-child {
+        border-bottom: none;
+      }
+
+      .selected-file button {
+        padding: 3px 8px;
+        font-size: 12px;
+        margin-left: 10px;
+        flex-shrink: 0;
+      }
+
+      .selected-file span {
+        flex-grow: 1;
+        margin-right: 10px;
+      }
+
+      .check-files-btn {
+        background-color: #ff9800;
+      }
+
+      .check-files-btn:hover {
+        background-color: #f57c00;
+      }
+
       .status-message {
         margin-top: 10px;
         padding: 10px;
@@ -297,6 +378,45 @@
         border-radius: 4px;
         background-color: white;
       }
+
+      .status-btn {
+        background-color: #9c27b0;
+      }
+
+      .status-btn:hover {
+        background-color: #7b1fa2;
+      }
+
+      .checkbox-group {
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        margin-top: 5px;
+      }
+
+      .checkbox-group label {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-weight: normal;
+      }
+
+      .checkbox-group input[type="checkbox"] {
+        width: auto;
+        margin: 0;
+      }
+
+      .search-options {
+        margin: 10px 0;
+        padding: 10px;
+        background-color: #f8f9fa;
+        border-radius: 4px;
+      }
+
+      .search-options label {
+        font-weight: normal;
+        color: #333;
+      }
     </style>
   </head>
   <body>
@@ -304,17 +424,23 @@
       <h1>Finder</h1>
 
       <div class="input-group">
-        <label for="directoryInput"
-          >Select Directories (comma-separated):</label
-        >
+        <label for="importDir">Directory Path:</label>
         <input
           type="text"
-          id="directoryInput"
-          placeholder="e.g., /path/to/dir1, /path/to/dir2"
-          value="/Users/dotrungduchd/Downloads"
-          style="width: 100%"
+          id="importDir"
+          placeholder="Enter directory path (e.g., C:\Data\Files)"
+          value="C:\Users\Admin\Downloads"
         />
-        <div id="directoryList" class="directory-list"></div>
+      </div>
+
+      <div class="input-group">
+        <label>Select Files:</label>
+        <div class="file-input-container">
+          <button class="file-input-label" onclick="openFileDialog()">
+            Choose Files
+          </button>
+        </div>
+        <div id="selectedFiles" class="selected-files"></div>
       </div>
 
       <div class="input-group">
@@ -336,20 +462,40 @@
         />
       </div>
 
+      <div class="search-options">
+        <label>
+          <input type="checkbox" id="emailOnly" />
+          Search by email only
+        </label>
+      </div>
+
       <div class="button-group">
         <button id="searchBtn">Search</button>
         <button id="importBtn" class="import-btn">
           Import Data
           <span class="tooltip">Update data in the database</span>
         </button>
+        <button id="checkFilesBtn" class="check-files-btn">
+          Check Imported Files
+          <span class="tooltip">Show list of imported files</span>
+        </button>
+        <button id="statusBtn" class="status-btn">
+          Check Status
+          <span class="tooltip">Show database status</span>
+        </button>
       </div>
 
       <div id="confirmModal" class="modal">
         <div class="modal-content">
-          <h3>Confirm Import</h3>
-          <p>
-            This will update the data in the database. Do you want to continue?
-          </p>
+          <h3>Import Options</h3>
+          <div class="modal-options">
+            <div class="checkbox-group">
+              <label>
+                <input type="checkbox" id="resetDB" />
+                Reset database before import
+              </label>
+            </div>
+          </div>
           <div class="modal-buttons">
             <button class="cancel-btn" onclick="closeModal()">Cancel</button>
             <button onclick="confirmImport()">Import</button>
@@ -374,115 +520,160 @@
     </div>
 
     <script>
-      const directoryInput = document.getElementById("directoryInput");
-      const directoryList = document.getElementById("directoryList");
+      // Initialize Electron integration
+      let electron = null;
+      try {
+        if (window.electron) {
+          electron = window.electron;
+        }
+      } catch (e) {
+        console.log("Running in browser mode");
+      }
+
+      const fileInput = document.getElementById("fileInput");
+      const selectedFilesDiv = document.getElementById("selectedFiles");
       const extensionsInput = document.getElementById("extensions");
       const searchInput = document.getElementById("searchInput");
       const searchBtn = document.getElementById("searchBtn");
       const importBtn = document.getElementById("importBtn");
+      const checkFilesBtn = document.getElementById("checkFilesBtn");
+      const statusBtn = document.getElementById("statusBtn");
       const resultsDiv = document.getElementById("results");
       const loadingDiv = document.getElementById("loading");
       const statusMessage = document.getElementById("statusMessage");
       const paginationDiv = document.getElementById("pagination");
       const pageSizeSelect = document.getElementById("pageSize");
 
-      let selectedDirectories = new Set(
-        directoryInput.value
-          .split(",")
-          .map((dir) => dir.trim())
-          .filter(Boolean)
-      );
+      let selectedFiles = new Set();
       let currentPage = 1;
       let totalPages = 1;
       let totalCount = 0;
       let currentPageSize = 10;
-      updateDirectoryList();
+      let isEmailOnly = false;
 
-      function showStatus(message, isError = false) {
-        statusMessage.textContent = message;
-        statusMessage.className =
-          "status-message " + (isError ? "error" : "success");
-        statusMessage.style.display = "block";
-        setTimeout(() => {
-          statusMessage.style.display = "none";
-        }, 3000);
+      // Function to open file dialog
+      function openFileDialog() {
+        // Create a temporary file input
+        const input = document.createElement("input");
+        input.type = "file";
+        input.multiple = true;
+        input.accept = ".xlsx,.xls,.csv";
+
+        input.onchange = (e) => {
+          const files = Array.from(e.target.files);
+          files.forEach((file) => {
+            // Get the full path of the file
+            const path = file.name;
+            selectedFiles.add(path);
+          });
+          updateSelectedFilesList();
+        };
+
+        input.click();
       }
 
-      function showLoading() {
-        loadingDiv.style.display = "block";
-        searchBtn.disabled = true;
-        importBtn.disabled = true;
-      }
-
-      function hideLoading() {
-        loadingDiv.style.display = "none";
-        searchBtn.disabled = false;
-        importBtn.disabled = false;
-      }
-
-      function updateDirectoryList() {
-        directoryList.innerHTML = "";
-        selectedDirectories.forEach((path) => {
+      function updateSelectedFilesList() {
+        selectedFilesDiv.innerHTML = "";
+        selectedFiles.forEach((path) => {
           const div = document.createElement("div");
-          div.className = "directory-item";
+          div.className = "selected-file";
           div.innerHTML = `
             <span>${path}</span>
-            <button onclick="removeDirectory('${path}')">Remove</button>
+            <button onclick="removeFile('${path}')">Remove</button>
           `;
-          directoryList.appendChild(div);
+          selectedFilesDiv.appendChild(div);
         });
-        directoryInput.value = Array.from(selectedDirectories).join(", ");
       }
 
-      function removeDirectory(path) {
-        selectedDirectories.delete(path);
-        updateDirectoryList();
+      function removeFile(path) {
+        selectedFiles.delete(path);
+        updateSelectedFilesList();
       }
 
-      directoryInput.addEventListener("input", (e) => {
-        // Remove the immediate update of directories
-        // This allows typing commas freely
-      });
+      async function checkStatus() {
+        showLoading();
+        try {
+          const emailOnly = document.getElementById("emailOnly").checked;
+          const response = await fetch("/status", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              emailOnly: emailOnly,
+            }),
+          });
+          const data = await response.json();
 
-      // Add blur event listener to update directories when input loses focus
-      directoryInput.addEventListener("blur", (e) => {
-        const dirs = e.target.value
-          .split(",")
-          .map((dir) => dir.trim())
-          .filter(Boolean);
-        selectedDirectories = new Set(dirs);
-        updateDirectoryList();
-      });
-
-      // Add keydown event listener to handle Enter key
-      directoryInput.addEventListener("keydown", (e) => {
-        if (e.key === "Enter") {
-          e.preventDefault();
-          const dirs = e.target.value
-            .split(",")
-            .map((dir) => dir.trim())
-            .filter(Boolean);
-          selectedDirectories = new Set(dirs);
-          updateDirectoryList();
+          if (response.ok) {
+            showStatus(
+              `Database Status:\n` +
+                `Total Rows: ${data.totalRows}\n` +
+                `Database Size: ${data.dbSize}\n` +
+                `Last Import: ${data.lastImport}`,
+              false
+            );
+          } else {
+            showStatus("Failed to get status: " + data.message, true);
+          }
+        } catch (error) {
+          showStatus("Error checking status: " + error.message, true);
+        } finally {
+          hideLoading();
         }
-      });
-
-      function showModal() {
-        document.getElementById("confirmModal").style.display = "block";
       }
 
-      function closeModal() {
-        document.getElementById("confirmModal").style.display = "none";
+      async function checkImportedFiles() {
+        showLoading();
+        try {
+          const emailOnly = document.getElementById("emailOnly").checked;
+          const response = await fetch("/check-files", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              files: Array.from(selectedFiles),
+              emailOnly: emailOnly,
+            }),
+          });
+
+          const data = await response.json();
+          if (response.ok) {
+            const importedFiles = data.importedFiles || [];
+            const notImportedFiles = data.notImportedFiles || [];
+
+            let message = "Imported Files:\n";
+            if (importedFiles.length > 0) {
+              message += importedFiles.join("\n");
+            } else {
+              message += "None";
+            }
+
+            message += "\n\nNot Imported Files:\n";
+            if (notImportedFiles.length > 0) {
+              message += notImportedFiles.join("\n");
+            } else {
+              message += "None";
+            }
+
+            showStatus(message);
+          } else {
+            showStatus("Failed to check files: " + data.message, true);
+          }
+        } catch (error) {
+          showStatus("Error checking files: " + error.message, true);
+        } finally {
+          hideLoading();
+        }
       }
 
-      function confirmImport() {
-        closeModal();
-        performImport();
-      }
+      // Add event listener for check files button
+      checkFilesBtn.addEventListener("click", checkImportedFiles);
 
       async function performImport() {
-        if (selectedDirectories.size === 0) {
-          showStatus("Please select at least one directory", true);
+        if (selectedFiles.size === 0) {
+          showStatus("Please select at least one file", true);
           return;
         }
 
@@ -494,12 +685,33 @@
           return;
         }
 
+        const resetDB = document.getElementById("resetDB").checked;
+        const emailOnly = document.getElementById("emailOnly").checked;
+        const importDir = document.getElementById("importDir").value.trim();
+
+        if (!importDir) {
+          showStatus("Please enter the directory path", true);
+          return;
+        }
+
         showLoading();
         const startTime = performance.now();
         try {
+          // Convert Set to Array and prepend directory path
+          const filesArray = Array.from(selectedFiles).map((file) => {
+            // Ensure directory path ends with separator
+            const dirPath =
+              importDir.endsWith("\\") || importDir.endsWith("/")
+                ? importDir
+                : importDir + "\\";
+            return dirPath + file;
+          });
+
           console.log("Import Request:", {
-            directories: Array.from(selectedDirectories),
+            files: filesArray,
             extensions: extensions,
+            resetDB: resetDB,
+            emailOnly: emailOnly,
           });
 
           const response = await fetch("/import", {
@@ -508,8 +720,10 @@
               "Content-Type": "application/json",
             },
             body: JSON.stringify({
-              directories: Array.from(selectedDirectories),
+              files: filesArray,
               extensions: extensions,
+              resetDB: resetDB,
+              emailOnly: emailOnly,
             }),
           });
 
@@ -523,9 +737,10 @@
 
           if (response.ok) {
             showStatus(
-              `Data imported successfully (${(endTime - startTime).toFixed(
-                2
-              )}ms)`
+              `Import completed successfully!\n` +
+                `Total Rows: ${data.totalRows}\n` +
+                `Total Files: ${data.totalFiles}\n` +
+                `Process Time: ${(endTime - startTime).toFixed(2)}ms`
             );
           } else {
             showStatus(data.message || "Import failed", true);
@@ -542,6 +757,28 @@
         }
       }
 
+      function showStatus(message, isError = false) {
+        statusMessage.innerHTML = message.replace(/\n/g, "<br>");
+        statusMessage.className =
+          "status-message " + (isError ? "error" : "success");
+        statusMessage.style.display = "block";
+        setTimeout(() => {
+          statusMessage.style.display = "none";
+        }, 5000);
+      }
+
+      function showLoading() {
+        loadingDiv.style.display = "block";
+        searchBtn.disabled = true;
+        importBtn.disabled = true;
+      }
+
+      function hideLoading() {
+        loadingDiv.style.display = "none";
+        searchBtn.disabled = false;
+        importBtn.disabled = false;
+      }
+
       searchBtn.addEventListener("click", () => {
         const query = searchInput.value.trim();
         if (!query) {
@@ -554,8 +791,8 @@
       });
 
       importBtn.addEventListener("click", () => {
-        if (selectedDirectories.size === 0) {
-          showStatus("Please select at least one directory to import.", true);
+        if (selectedFiles.size === 0) {
+          showStatus("Please select at least one file to import.", true);
           return;
         }
         const extensions = extensionsInput.value.trim();
@@ -566,6 +803,19 @@
         resultsDiv.innerHTML = ""; // Clear results before import
         showModal();
       });
+
+      function showModal() {
+        document.getElementById("confirmModal").style.display = "block";
+      }
+
+      function closeModal() {
+        document.getElementById("confirmModal").style.display = "none";
+      }
+
+      function confirmImport() {
+        closeModal();
+        performImport();
+      }
 
       function updatePagination() {
         const paginationControls = document.createElement("div");
@@ -615,7 +865,7 @@
 
       async function performSearch() {
         const directories = document
-          .getElementById("directoryInput")
+          .getElementById("importDir")
           .value.split(",")
           .map((d) => d.trim());
         const extensions = document
@@ -623,6 +873,7 @@
           .value.split(",")
           .map((e) => e.trim());
         const query = document.getElementById("searchInput").value;
+        const emailOnly = document.getElementById("emailOnly").checked;
 
         if (!query) {
           showStatus("Please enter a search query", true);
@@ -638,6 +889,7 @@
             query,
             page: currentPage,
             pageSize: currentPageSize,
+            emailOnly,
           });
 
           const response = await fetch("/search", {
@@ -651,6 +903,7 @@
               query,
               page: currentPage,
               pageSize: currentPageSize,
+              emailOnly,
             }),
           });
 
@@ -701,7 +954,7 @@
           resultsDiv.innerHTML = `
             <div class="no-results">
               <h3>No Results Found</h3>
-              <p>Try adjusting your search criteria or check if the selected directories contain the files you're looking for.</p>
+              <p>Try adjusting your search criteria or check if the selected files contain the data you're looking for.</p>
             </div>`;
           return;
         }
@@ -733,6 +986,9 @@
 
         resultsDiv.appendChild(table);
       }
+
+      // Add event listener for status button
+      statusBtn.addEventListener("click", checkStatus);
     </script>
   </body>
 </html>
